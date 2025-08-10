@@ -1,0 +1,233 @@
+---
+title: "Forecast daily bike rental demand using time series models"
+date: "2025-08-08"
+output: html_document
+author: "Samuel Akuffo"
+---
+
+# About Data Analysis Report
+    
+This RMarkdown file contains the report of the data analysis done for the project on forecasting daily bike rental demand using time series models in R. It contains analysis such as data exploration, summary statistics and building the time series models. The final report was completed on `r date()`. 
+
+**Data Description:**
+    
+This dataset contains the daily count of rental bike transactions between years 2011 and 2012 in Capital bikeshare system with the corresponding weather and seasonal information.
+
+**Data Source:** https://archive.ics.uci.edu/ml/datasets/bike+sharing+dataset
+
+**Relevant Paper:** 
+    
+Fanaee-T, Hadi, and Gama, Joao, 'Event labeling combining ensemble detectors and background knowledge', Progress in Artificial Intelligence (2013): pp. 1-15, Springer Berlin Heidelberg
+
+
+
+# Loading and exploring the data
+
+
+```{r}
+## Import required packages
+
+## Load data and install packages
+if(!require(tidyverse)) install.packages("tidyverse")
+if(!require(lubridate)) install.packages("lubridate")
+if(!require(timetk)) install.packages("timetk")
+if(!require(forecast)) install.packages("forecast")
+if(!require(tseries)) install.packages("tseries")
+if(!require(zoo)) install.packages("zoo")
+if(!require(ggplot2)) install.packages("ggplot2")
+
+library(tidyverse)
+library(lubridate)
+library(timetk)
+library(forecast)
+library(tseries)
+library(zoo)
+library(ggplot2)
+
+url <- "C:/Users/samaw/projects/bikeshare/day.csv"
+bike_data <- read.csv(url)
+head(bike_data)
+glimpse(bike_data)
+
+summary(bike_data)
+```
+
+
+## Describing and exploring the data
+
+```{r}
+bike_data$dteday <- ymd(bike_data$dteday)
+
+# Plot of daily rentals over time
+ggplot(bike_data, aes(x = dteday, y=cnt)) +
+    geom_line(color="blue") +
+    labs(title="Daily bike rentals over time", x="Date", y="Total Rentals (cnt)") +
+    theme_minimal()
+
+#Summary statistics for rentals
+mean_rentals <- mean(bike_data$cnt)
+median_rentals <- median(bike_data$cnt)
+max_rentals <- max(bike_data$cnt)
+min_rentals <- min(bike_data$cnt)
+
+cat("Mean rentals:", mean_rentals, "\n")
+cat("Median rentals", median_rentals, "\n")
+cat("Max rentals", max_rentals, "\n")
+cat("Min rentals", min_rentals, "\n")
+
+#Bike rentals by weekday to show weekly seasonality
+bike_data %>%
+    mutate(weekday = wday(dteday, label=TRUE)) %>%
+    group_by(weekday) %>%
+    summarise(avg_rentals = mean(cnt)) %>%
+    ggplot(aes(x=weekday, y=avg_rentals)) +
+    geom_bar(stat="identity",fill="skyblue") +
+    labs(title="Average rentals by weekday",
+         x="Weekday", y="Average Rentals") +
+    theme_minimal()
+
+# Rentals vs Temperature
+ggplot(bike_data, aes(x=temp, y=cnt)) +
+  geom_point(alpha=0.5, color="darkred") +
+  geom_smooth(method="loess") +
+  labs(title="Bike Rentals vs Temperature", x="Temperatue (normalized)", y="Rentals") +
+  theme_minimal()
+
+```
+# Interactive time series plots
+
+```{r}
+## Read about the timetk package
+ts_data <- bike_data %>%
+  select(dteday, cnt) %>%
+  tk_ts(start = c(2011, 1), frequency = 365)
+
+plot(ts_data, main = "Daily Bike Rental Demand in Time Series")
+
+
+```
+# Smoothing of time series data
+
+```{r}
+# 7 Day Moving Average to smooth data
+bike_data <- bike_data %>%
+    arrange(dteday) %>%
+    mutate(ma_7day = zoo::rollmean(cnt, k=7, fill=NA, align="right"))
+
+#Plot of original and smoothed rentals
+ggplot(bike_data, aes(x=dteday)) +
+    geom_line(aes(y=cnt), color="blue", alpha=0.6) +
+    geom_line(aes(y=ma_7day), color="red", size=1) +
+    labs(title="Daily Rentals with 7-day Moving Average", x="Date", y="Rentals") + 
+    theme_minimal()
+
+```
+# Decompsing and accessing the stationarity of time series data
+
+```{r}
+rentals_ts <- ts(bike_data$cnt, start=c(2011, 1), frequency=365)
+
+ts_decomp <- stl(rentals_ts, s.window="periodic")
+plot(ts_decomp)
+
+#Dicky-Fuller test for stationarity
+adf_test <- adf.test(rentals_ts)
+adf_test
+
+if (adf_test$p.value > 0.05) {
+  rentals_ts <- diff(rentals_ts)
+}
+
+rentals_ts <- na.omit(rentals_ts) 
+
+```
+# Fitting and forecasting time series data using ARIMA models
+
+```{r}
+#Auto ARIMA model fitting
+fit_auto <- auto.arima(rentals_ts)
+
+summary(fit_auto)
+
+#Checking residuals diagnostics(fit_auto)
+checkresiduals(fit_auto)
+
+# Inspect ACF/PACF for manual choice
+acf(rentals_ts)
+pacf(rentals_ts)
+
+fit_manual <- tryCatch({
+  Arima(
+    rentals_ts,
+    order = c(1,0,1),
+    seasonal = list(order = c(1,1,1), period = 7) # safer for convergence
+  )
+}, error = function(e) {
+  message("Manual ARIMA failed: ", e$message)
+  NULL
+})
+
+if (!is.null(fit_manual)) {
+  summary(fit_manual)
+  checkresiduals(fit_manual)
+}
+
+#Next 30 days forecast
+forecast_auto <- forecast(fit_auto, h=30)
+forecast_manual <- forecast(fit_manual, h=30)
+
+accuracy_auto <- accuracy(forecast_auto)
+accuracy_manual = accuracy(forecast_manual)
+
+list(Auto_ARIMA = accuracy_auto, Manual_ARIMA = accuracy_manual)
+
+autoplot(forecast_auto) +
+    labs(title="30-Day Forecast(Auto ARIMA) of Daily Bike Rentals", x="Time", y="Rentals") + 
+    theme_minimal()
+
+autoplot(forecast_manual) +
+    labs(title="30-Day Forecast(Manual ARIMA) of Daily Bike Rentals", x="Time", y="Rentals") + 
+    theme_minimal()
+```
+
+
+## Findings and Conclusions
+
+### Data Exploration
+- The dataset covers **daily bike rental counts** in the Capital Bikeshare system for **2011–2012**, along with weather and seasonal attributes.
+- **Average daily rentals**: ~4,505; **median**: 4,528; **minimum**: 22; **maximum**: 8,729.
+- Rentals show **clear weekly seasonality**, with higher demand on certain weekdays.
+- **Temperature** has a positive, non-linear relationship with rentals with usage increasing on warmer days until extreme heat causes a drop.
+
+### Time Series Characteristics
+- Visual inspection revealed **both trend and seasonality** in the daily rental counts.
+- A **7-day moving average** smoothed short-term fluctuations, highlighting consistent patterns.
+- **STL decomposition** confirmed strong seasonal components, likely driven by weekly and annual cycles.
+
+### Stationarity and Transformation
+- The **Augmented Dickey-Fuller (ADF)** test indicated the raw series was **non-stationary**, requiring differencing.
+- After differencing, the series satisfied the **stationarity assumption** for ARIMA modeling.
+
+### Modeling
+- **Auto ARIMA** successfully identified an appropriate seasonal model and produced valid forecasts.
+- **Manual ARIMA** with `(1,0,1)` non-seasonal and `(1,1,1)` seasonal terms initially failed with a **365-day seasonal period** due to convergence issues; switching to a **7-day period** improved stability.
+- **Residual diagnostics** for Auto ARIMA showed well-behaved residuals with no significant autocorrelation.
+
+### Forecast Performance
+- **Auto ARIMA** produced a plausible **30-day projection**, maintaining seasonal variation and trend.
+- **Manual ARIMA** forecasts were similar, but Auto ARIMA achieved **slightly better error metrics**.
+
+### Conclusion
+- Daily bike rental demand is **highly seasonal** and influenced by **weather conditions**, particularly temperature.
+- **ARIMA-based forecasting**, especially with **automated model selection**, can effectively predict short-term rental demand.
+- Model stability depends on the choice of **seasonal period** and therefore over-specifying (e.g., annual seasonality in short datasets) can cause failures.
+- **Recommendation:** Use Auto ARIMA with a **7-day seasonal period** to capture weekly cycles and maintain robust accuracy.
+- **Future work:** Incorporate **exogenous variables** (e.g., weather, holidays) to enhance predictive performance.
+
+
+
+
+
+
+
+

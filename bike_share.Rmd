@@ -94,7 +94,7 @@ ggplot(bike_data, aes(x=temp, y=cnt)) +
   theme_minimal()
 
 ```
-# Interactive time series plots
+## Interactive time series plots
 
 ```{r}
 ## Read about the timetk package
@@ -106,7 +106,7 @@ plot(ts_data, main = "Daily Bike Rental Demand in Time Series")
 
 
 ```
-# Smoothing of time series data
+## Smoothing of time series data
 
 ```{r}
 # 7 Day Moving Average to smooth data
@@ -122,7 +122,7 @@ ggplot(bike_data, aes(x=dteday)) +
     theme_minimal()
 
 ```
-# Decompsing and accessing the stationarity of time series data
+## Decompsing and accessing the stationarity of time series data
 
 ```{r}
 rentals_ts <- ts(bike_data$cnt, start=c(2011, 1), frequency=365)
@@ -141,7 +141,7 @@ if (adf_test$p.value > 0.05) {
 rentals_ts <- na.omit(rentals_ts) 
 
 ```
-# Fitting and forecasting time series data using ARIMA models
+## Fitting and forecasting time series data using ARIMA models
 
 ```{r}
 #Auto ARIMA model fitting
